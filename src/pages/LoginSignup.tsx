@@ -6,9 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2 } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, Info } from 'lucide-react';
 import PageMeta from '@/components/common/PageMeta';
 import ProofDeskLogo from '@/components/common/ProofDeskLogo';
 
@@ -70,6 +69,27 @@ const LoginSignup: React.FC = () => {
       return;
     }
 
+    // Allowlist Check: Check if email is in the allowed_users table
+    try {
+      const { data: isAllowed, error: allowError } = await supabase
+        .from('allowed_users')
+        .select('email')
+        .eq('email', signupEmail.toLowerCase())
+        .maybeSingle();
+
+      if (allowError) {
+        console.error('Allowlist check error:', allowError);
+        // If the table doesn't exist yet, we can't block. 
+        // For now, I'll log it but if you create the table, this will work.
+      } else if (!isAllowed) {
+        setError('Your email is not on the authorized list. Please contact the organizer.');
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.error('Allowlist check failed:', err);
+    }
+
     const { data, error: signUpError } = await signUp(signupEmail, signupPassword);
     setIsLoading(false);
 
@@ -125,6 +145,14 @@ const LoginSignup: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <Alert className="mb-6 border-blue-500/20 bg-blue-500/5 text-blue-600 dark:text-blue-400">
+              <Info className="h-4 w-4" />
+              <AlertTitle className="text-xs font-semibold uppercase tracking-wider mb-1">Access Restriction</AlertTitle>
+              <AlertDescription className="text-xs leading-relaxed">
+                Public registration is currently limited to <strong>Hackathon Organizers</strong> to preserve AI processing credits. 
+                If you require access, please contact the developer.
+              </AlertDescription>
+            </Alert>
             <Tabs defaultValue="login" className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted">
                 <TabsTrigger value="login" className="text-sm">Login</TabsTrigger>
