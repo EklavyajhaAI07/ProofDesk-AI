@@ -6,7 +6,6 @@ import AppLayout from '@/components/layouts/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, FileSearch, ListChecks, PenLine, AlertCircle } from 'lucide-react';
 import { processDocumentLocally } from '@/lib/ai';
-import { virtualDb } from '@/lib/db-fallback';
 import { useAuth } from '@/contexts/AuthContext';
 
 const steps = [
@@ -56,20 +55,15 @@ const Processing: React.FC = () => {
         }
 
         // Save results to database
-        const outputPayload = {
+        const { error: outputError } = await supabase.from('document_outputs').insert({
           document_id: documentId,
           summary: data.summary,
           draft_reply: data.draft_reply,
           raw_ai_json: data,
-        };
-
-        const { error: outputError } = await supabase.from('document_outputs').insert(outputPayload);
+        });
 
         if (outputError) {
-          console.warn('Output save failed, using virtual database:', outputError);
-          if (user?.email === 'eklavya2227@gmail.com') {
-            await virtualDb.createOutput(outputPayload);
-          }
+          console.error('Output save error:', outputError);
         }
 
         // Save tasks
@@ -85,18 +79,12 @@ const Processing: React.FC = () => {
 
           const { error: tasksError } = await supabase.from('tasks').insert(tasksToInsert);
           if (tasksError) {
-            console.warn('Tasks save failed, using virtual database:', tasksError);
-            if (user?.email === 'eklavya2227@gmail.com') {
-              await virtualDb.createTasks(tasksToInsert);
-            }
+            console.error('Tasks save error:', tasksError);
           }
         }
 
         // Update document status
-        const { error: updateError } = await supabase.from('documents').update({ status: 'completed' }).eq('id', documentId);
-        if (updateError && user?.email === 'eklavya2227@gmail.com') {
-          await virtualDb.updateDocument(documentId, { status: 'completed' });
-        }
+        await supabase.from('documents').update({ status: 'completed' }).eq('id', documentId);
 
         // Send processing complete email
         try {

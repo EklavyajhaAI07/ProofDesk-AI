@@ -124,43 +124,13 @@ const Dashboard: React.FC = () => {
 
     setIsProcessing(true);
 
-    // Create document record
-    let docData;
-    let docError;
-
-    const docPayload = {
-      user_id: user!.id,
-      title,
-      input_type: inputType,
-      original_text: documentText,
-      file_path: filePath,
-      status: 'processing' as const,
-    };
-
-    const { data: realDocData, error: realDocError } = await supabase
-      .from('documents')
-      .insert(docPayload)
-      .select('id')
-      .single();
-
-    if (realDocError) {
-      console.warn('Real database failed, using virtual database for developer:', realDocError);
-      if (user?.email === 'eklavya2227@gmail.com') {
-        docData = await virtualDb.createDocument(docPayload);
-      } else {
-        docError = realDocError;
-      }
-    } else {
-      docData = realDocData;
-    }
-
-    if (docError || !docData) {
-      setError('Failed to create document record. Please try again.');
+    if (realDocError || !realDocData) {
+      setError('Failed to create document record on Supabase. Have you run the SQL setup?');
       setIsProcessing(false);
       return;
     }
 
-    const documentId = docData.id;
+    const documentId = realDocData.id;
 
     // Navigate to processing page with document ID
     navigate('/processing', { state: { documentId, documentText } });
