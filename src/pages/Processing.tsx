@@ -5,6 +5,7 @@ import { supabase } from '@/db/supabase';
 import AppLayout from '@/components/layouts/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, FileSearch, ListChecks, PenLine, AlertCircle } from 'lucide-react';
+import { processDocumentLocally } from '@/lib/ai';
 
 const steps = [
   { label: 'Reading document', icon: FileSearch },
@@ -32,17 +33,23 @@ const Processing: React.FC = () => {
 
     const process = async () => {
       try {
-        const { data, error: fnError } = await supabase.functions.invoke('process-document', {
+        let data;
+        
+        // Try Edge Function first
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('process-document', {
           body: { document_text: documentText, document_id: documentId },
         });
 
         if (fnError) {
-          const errorMsg = await fnError?.context?.text?.().catch(() => null);
-          let parsed: { error?: string } = { error: fnError.message };
-          try {
-            if (errorMsg) parsed = JSON.parse(errorMsg);
-          } catch { /* ignore parse error */ }
-          throw new Error(parsed.error || 'Processing failed');
+          console.warn('Edge Function failed or not deployed, falling back to local processing:', fnError);
+          // Fallback to local processing using VITE_GROQ_API_KEY
+          data = await processDocumentLocally(documentText);
+        } else {
+          data = fnData;
+        }
+
+        if (!data) {
+          throw new Error('Processing failed to return data');
         }
 
         // Save results to database
