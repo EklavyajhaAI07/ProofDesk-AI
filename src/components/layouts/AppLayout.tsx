@@ -40,10 +40,43 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     <div className="flex min-h-screen w-full bg-background">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 shrink-0 border-r border-border bg-card">
-        <div className="p-6">
-          <Link to="/" className="flex items-center gap-3" aria-label="ProofDesk AI Home">
+        <div className="p-6 pb-2">
+          <Link to="/" className="flex items-center gap-3 mb-6" aria-label="ProofDesk AI Home">
             <ProofDeskLogo size="md" />
           </Link>
+          
+          <div className="flex items-center justify-between px-1 mb-2">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Appearance</span>
+            <div className="flex gap-1 bg-muted/50 p-1 rounded-lg">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={`h-7 w-7 rounded-md transition-all ${theme === 'light' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground'}`}
+                onClick={() => setTheme('light')}
+                title="Light Mode"
+              >
+                <Sun className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={`h-7 w-7 rounded-md transition-all ${theme === 'dark' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground'}`}
+                onClick={() => setTheme('dark')}
+                title="Dark Mode"
+              >
+                <Moon className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={`h-7 w-7 rounded-md transition-all ${theme === 'navy' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground'}`}
+                onClick={() => setTheme('navy')}
+                title="Indian Navy Mode"
+              >
+                <Anchor className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
 
         <Separator />
@@ -70,39 +103,9 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           })}
         </nav>
 
-          <div className="p-4 border-t border-border space-y-2">
-          <div className="flex items-center justify-between mb-2 px-3">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Theme</span>
-            <div className="flex gap-1">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className={`h-7 w-7 ${theme === 'light' ? 'bg-primary/10 text-primary' : ''}`}
-                onClick={() => setTheme('light')}
-                title="Light Mode"
-              >
-                <Sun className="h-3.5 w-3.5" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className={`h-7 w-7 ${theme === 'dark' ? 'bg-primary/10 text-primary' : ''}`}
-                onClick={() => setTheme('dark')}
-                title="Dark Mode"
-              >
-                <Moon className="h-3.5 w-3.5" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className={`h-7 w-7 ${theme === 'navy' ? 'bg-primary/10 text-primary' : ''}`}
-                onClick={() => setTheme('navy')}
-                title="Indian Navy Mode"
-              >
-                <Anchor className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
+        </nav>
+
+        <div className="p-4 border-t border-border space-y-2">
           <div className="flex items-center gap-3 mb-3 px-3">
             <User className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="min-w-0">
