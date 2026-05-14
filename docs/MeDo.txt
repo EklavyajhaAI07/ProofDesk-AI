@@ -1,0 +1,404 @@
+Yes — that is exactly the right mindset. In hackathons, a small working MVP usually beats a big half-finished platform, because judges care about execution, ease of use, impact, and a clear demo of core functionality. Since the MeDo hackathon explicitly asks for a live app and explains projects through how MeDo generated useful parts, your best move is to build one narrow, magical workflow that works reliably from input to result.
+
+For ProofDesk, the strongest MVP is not “document workspace for everything.” It is: upload one document, extract action items, show due dates, and generate one ready-to-use draft. That is small enough to finish, clear enough to demo, and smart enough to feel impressive.
+
+MVP scope
+The cleanest version of ProofDesk should solve one painful problem: people receive messy PDF instructions, screenshots, or copied messages, but they do not know what action to take next. Your MVP should take one input, process it with AI, and return three outputs only: summary, tasks with deadlines, and one draft response.
+
+Core features
+Build only these 4 features:
+
+File or text input: upload PDF/image or paste message text.
+
+AI extraction: generate short summary plus task list with due dates and priority.
+
+Action board: show extracted tasks in a simple checklist/table UI.
+
+Draft generator: create one reply draft such as email or WhatsApp follow-up. with the one tap butten "SEND" Feature
+
+Skip for hackathon
+Do not build these now:
+
+Team collaboration
+
+Real-time notifications
+
+OCR pipeline complexity beyond one simple parser
+
+Calendar integrations
+
+Role-based permissions
+
+Large analytics dashboard
+
+Those features increase risk without improving your core demo much.
+
+Best “crazy but small” moment
+Your one standout feature should be:
+
+“Drop a messy client PDF or screenshot, and ProofDesk instantly turns it into:
+
+what this is about,
+
+what you must do,
+
+when to do it,
+
+what to reply.”
+
+That is memorable because it converts confusion into action in one shot, which fits common hackathon judging around originality, implementation, user experience, and impact.
+
+Frontend structure
+Keep the frontend to 4 screens or sections max so the app feels polished, not bloated.
+
+Use this types of Animated Animations, what relates with our App: https://2025.oceanx.org/
+not same as given but similar.
+
+1. Landing / login-sigup page / input page
+Purpose: let user login/sigup
+
+upload or paste content fast.
+
+Upload PDF/image
+
+Paste raw message text
+
+“Process with ProofDesk” button
+
+One sample file/demo button
+
+2. Processing state
+Purpose: show trust and clarity.
+
+Loader with steps like “Reading file,” “Finding tasks,” “Preparing draft”
+
+Maybe show extracted text preview if available
+
+3. Results page
+Purpose: the real MVP output.
+
+Top card: few line summary
+
+Middle section: extracted tasks
+
+Each task has title, due date, priority, status default “open”
+
+Side card: generated draft reply
+
+4. History page
+Purpose: keep it full-stack but simple.
+
+List of previous processed documents
+
+Click one record to reopen results
+
+Suggested component tree
+App
+
+Navbar
+
+UploadPanel
+
+SampleInputButton
+
+ProcessingView
+
+SummaryCard
+
+TaskList
+
+TaskCard
+
+DraftCard
+
+DocumentHistory
+
+That is enough for a clean demo and strong product feel.
+
+Backend and APIs
+The backend should be thin and workflow-based, not enterprise-style. Because MeDo is positioned for building full-stack apps with backend logic and databases quickly, keep your API design very simple and visible.
+
+Recommended backend modules
+File ingestion
+
+Text extraction
+
+AI processing
+
+Data persistence
+
+Result retrieval
+
+Minimal API set
+Use only these endpoints:
+
+POST /documents/upload
+Receives file or text input and creates a document record.
+
+POST /documents/:id/process
+Runs extraction pipeline, AI summary, task extraction, and draft generation.
+
+GET /documents/:id
+Returns one processed document with outputs.
+
+GET /documents
+Returns all saved documents for history page.
+
+PATCH /tasks/:id
+Optional, only if you want to toggle task status like open/done.
+
+That is enough for a real full-stack MVP.
+
+Internal backend pipeline
+Inside /process, do this:
+
+Get document text.
+
+Send text to AI prompt.
+
+Ask for strict JSON output:
+
+summary
+
+tasks]
+
+draft_reply
+
+Validate JSON.
+
+Save response to DB.
+
+Return processed result to frontend.
+
+This is safer than asking AI for free-form text and then parsing later. It reduces demo risk.
+
+Database schema
+Use a small schema with only 3 main tables. That keeps things clean and easy to explain.
+
+1. documents
+Stores each uploaded or pasted item.
+
+Fields:
+
+id
+
+title
+
+input_type (pdf, image, text)
+
+original_text
+
+file_url or file_name
+
+status (uploaded, processing, completed, failed)
+
+created_at
+
+2. document_outputs
+Stores AI-generated result for one document.
+
+Fields:
+
+id
+
+document_id FK
+
+summary
+
+draft_reply
+
+raw_ai_json
+
+created_at
+
+3. tasks
+Stores extracted actions.
+
+Fields:
+
+id
+
+document_id FK
+
+task_text
+
+due_date
+
+priority (low, medium, high)
+
+status (open, done)
+
+source_snippet optional
+
+created_at
+
+Optional 4. users
+Only add this if auth is required by your build tool.
+
+id
+
+name
+
+email
+
+If auth is not needed, skip users for hackathon speed.
+
+App data flow
+This should be your simplest full-stack story in the presentation.
+
+User flow
+User uploads a PDF/image or pastes text.
+
+Frontend sends it to backend.
+
+Backend extracts text from the input.
+
+Backend sends clean text to AI with structured prompt.
+
+AI returns summary, tasks, due dates, and one draft reply.
+
+Backend saves everything in DB.
+
+Frontend shows summary, task list, and draft.
+
+User marks a task done or opens older document from history.
+
+In short
+Input → extract text → AI structure → save → show action items
+
+That is the whole product. Clear, full-stack, and demo-friendly.
+
+System design thinking
+Think like this:
+
+Problem
+Unstructured documents create mental overload. Users waste time reading, re-reading, and figuring out what action is needed.
+
+Product promise
+ProofDesk converts unstructured input into immediate next actions.
+
+MVP principle
+Do one workflow extremely well:
+
+One input
+
+One AI pass
+
+Three outputs
+
+One simple saved history
+
+Technical design principle
+Use deterministic app flow around a flexible AI core.
+
+Deterministic parts: upload, save, fetch, render, task toggle
+
+AI part: summary/task/draft generation
+
+This makes the app feel reliable even though AI is involved.
+
+AI prompt design
+Your prompt should instruct the model:
+
+Read the document carefully
+
+Extract only explicit or strongly implied action items
+
+Identify due dates
+
+Mark priority
+
+Write a short professional reply draft
+
+Return strict JSON only
+
+This is one of the most important engineering decisions in the MVP, because clean AI output makes the whole app stable.
+
+Recommended stack
+Use the simplest modern stack you can finish fast.
+
+Frontend
+React or Next.js frontend
+
+Tailwind or simple component library
+
+Clean single-column dashboard UI
+
+Backend
+Node.js / Express or Next.js API routes
+
+One AI provider call
+
+File parser for PDF/text, simple OCR only if easy
+
+Database
+PostgreSQL or Supabase
+
+Three tables only
+
+Storage
+Local/supabase bucket/file store for uploaded files
+
+AI layer
+One structured prompt
+
+One JSON schema response
+
+One retry if invalid format
+
+Final MVP blueprint
+If I were reducing ProofDesk to the most judge-friendly build, I would make it exactly this:
+
+ProofDesk MVP
+Upload one PDF or paste one message
+
+Extract summary
+
+Extract 3–7 action tasks with due dates
+
+Generate one reply draft
+
+Save it in history
+
+Allow task check-off
+
+That is enough to look like a real product, enough to demonstrate full-stack architecture, and small enough to finish well.
+
+Architecture snapshot
+text
+Frontend
+  Upload UI
+  Results Dashboard
+  History View
+
+Backend
+  Upload API
+  Process API
+  Fetch Document API
+  Update Task API
+
+Services
+  Text Extraction Service
+  AI Processing Service
+  Persistence Service
+
+Database
+  documents
+  document_outputs
+  tasks
+Best demo scenario
+Use a realistic sample:
+
+Freelancer receives client PDF with requested changes and timeline
+
+User uploads it
+
+ProofDesk shows summary
+
+Extracts tasks like “Update landing page copy by Friday”
+
+Generates draft: “Thanks, I reviewed the document...”
+
+User marks one task complete
+
+That demo is simple, human, and easy for judges to understand fast.

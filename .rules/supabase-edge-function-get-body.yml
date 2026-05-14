@@ -1,0 +1,28 @@
+id: supabase-edge-function-get-with-body
+language: ts
+files:
+  - src/**/*.ts
+  - src/**/*.tsx
+severity: error
+message: |
+  ❌ GET requests cannot carry a body: when using supabase.functions.invoke with method: 'GET', parameters must be concatenated in the URL
+
+  ✅ Correct usage (GET request: parameters must be concatenated to the function name URL):
+  supabase.functions.invoke(`function-name?task_id=${taskId}&action=check`)
+
+
+  Reason:
+  - HTTP specification (RFC 9110) clearly states that GET requests should not carry semantic body
+  - GET query parameters must be located in the URL query string, not passed through the body
+  - Supabase Edge Functions GET calls should append parameters directly after the function name
+
+rule:
+  any:
+    # Match method: 'GET' before body
+    - pattern: "supabase.functions.invoke($FUNC, {method: 'GET', body: $BODY})"
+    # Match body before method: 'GET'
+    - pattern: "supabase.functions.invoke($FUNC, {body: $BODY, method: 'GET'})"
+    # Match generic parameter + method: 'GET' before body
+    - pattern: "supabase.functions.invoke<$TYPE>($FUNC, {method: 'GET', body: $BODY})"
+    # Match generic parameter + body before method: 'GET'
+    - pattern: "supabase.functions.invoke<$TYPE>($FUNC, {body: $BODY, method: 'GET'})"

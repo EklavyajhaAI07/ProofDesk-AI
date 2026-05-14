@@ -1,0 +1,9 @@
+# ProofDesk AI — robots.txt
+User-agent: *
+Allow: /
+Disallow: /processing
+Disallow: /results
+Disallow: /profile
+
+# Sitemaps
+Sitemap: https://proofdesk.ai/sitemap.xml

@@ -1,0 +1,66 @@
+id: require-button-interaction
+language: Tsx
+files:
+  - src/**/*.tsx
+  - src/**/*.jsx
+rule:
+  kind: jsx_opening_element
+  all:
+    # Must be <Button> component
+    - has:
+        kind: identifier
+        regex: '^Button$'
+    # No onClick
+    - not:
+        has:
+          kind: jsx_attribute
+          has:
+            kind: property_identifier
+            regex: '^onClick$'
+    # No asChild
+    - not:
+        has:
+          kind: jsx_attribute
+          has:
+            kind: property_identifier
+            regex: '^asChild$'
+    # No type="submit" or type="reset"
+    - not:
+        has:
+          kind: jsx_attribute
+          all:
+            - has:
+                kind: property_identifier
+                regex: '^type$'
+            - any:
+                - has:
+                    kind: string
+                    regex: '^"(submit|reset)"$'
+                - has:
+                    kind: jsx_expression
+                    has:
+                      kind: string
+                      regex: '^"(submit|reset)"$'
+    # Not inside *Trigger component (e.g., DialogTrigger, SheetTrigger)
+    - not:
+        inside:
+          stopBy: end
+          kind: jsx_element
+          has:
+            kind: jsx_opening_element
+            has:
+              kind: identifier
+              regex: 'Trigger$'
+    # Not inside <Link> or <a> (navigation provided by parent)
+    - not:
+        inside:
+          stopBy: end
+          kind: jsx_element
+          has:
+            kind: jsx_opening_element
+            has:
+              kind: identifier
+              regex: '^(Link|a)$'
+
+message: '<Button> must be clickable, please ensure the logic after clicking has been implemented\nPlease add onClick, type="submit", type="reset", asChild attributes, or wrap it in a *Trigger component, or <Link> or <a>'
+severity: error
