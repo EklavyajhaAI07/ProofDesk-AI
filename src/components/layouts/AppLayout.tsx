@@ -103,7 +103,6 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           })}
         </nav>
 
-        </nav>
 
         <div className="p-4 border-t border-border space-y-2">
           <div className="flex items-center gap-3 mb-3 px-3">
