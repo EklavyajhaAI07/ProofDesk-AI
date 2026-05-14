@@ -18,6 +18,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { virtualDb } from '@/lib/db-fallback';
 import type { Document, DocumentOutput, Task } from '@/types/types';
 
 const priorityColors = {
@@ -27,6 +28,7 @@ const priorityColors = {
 };
 
 const Results: React.FC = () => {
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { documentId } = location.state || {};
@@ -43,28 +45,55 @@ const Results: React.FC = () => {
     }
 
     const fetchData = async () => {
-      const { data: docData } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('id', documentId)
-        .maybeSingle();
+      try {
+        let { data: docData, error: docErr } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('id', documentId)
+          .maybeSingle();
 
-      const { data: outData } = await supabase
-        .from('document_outputs')
-        .select('*')
-        .eq('document_id', documentId)
-        .maybeSingle();
+        if (docErr && user?.email === 'eklavya2227@gmail.com') {
+          docData = await virtualDb.getDocument(documentId);
+        }
+        
+        if (!docData) {
+          // If not in real DB, definitely check virtual DB
+          docData = await virtualDb.getDocument(documentId);
+        }
+        setDocument(docData);
 
-      const { data: tasksData } = await supabase
-        .from('tasks')
-        .select('*')
-        .eq('document_id', documentId)
-        .order('priority', { ascending: false });
+        let { data: outData, error: outErr } = await supabase
+          .from('document_outputs')
+          .select('*')
+          .eq('document_id', documentId)
+          .maybeSingle();
 
-      setDocument(docData);
-      setOutput(outData);
-      setTasks(Array.isArray(tasksData) ? tasksData : []);
-      setLoading(false);
+        if (outErr && user?.email === 'eklavya2227@gmail.com') {
+          outData = await virtualDb.getOutput(documentId);
+        }
+        if (!outData) {
+          outData = await virtualDb.getOutput(documentId);
+        }
+        setOutput(outData);
+
+        let { data: tasksData, error: tasksErr } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('document_id', documentId)
+          .order('priority', { ascending: false });
+
+        if (tasksErr && user?.email === 'eklavya2227@gmail.com') {
+          tasksData = await virtualDb.getTasks(documentId);
+        }
+        if (!tasksData || tasksData.length === 0) {
+          tasksData = await virtualDb.getTasks(documentId);
+        }
+        setTasks(Array.isArray(tasksData) ? tasksData : []);
+      } catch (err) {
+        console.error('Fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchData();

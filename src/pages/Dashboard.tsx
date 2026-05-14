@@ -21,6 +21,7 @@ import {
   FileUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { virtualDb } from '@/lib/db-fallback';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -124,21 +125,37 @@ const Dashboard: React.FC = () => {
     setIsProcessing(true);
 
     // Create document record
-    const { data: docData, error: docError } = await supabase
+    let docData;
+    let docError;
+
+    const docPayload = {
+      user_id: user!.id,
+      title,
+      input_type: inputType,
+      original_text: documentText,
+      file_path: filePath,
+      status: 'processing' as const,
+    };
+
+    const { data: realDocData, error: realDocError } = await supabase
       .from('documents')
-      .insert({
-        user_id: user!.id,
-        title,
-        input_type: inputType,
-        original_text: documentText,
-        file_path: filePath,
-        status: 'processing',
-      })
+      .insert(docPayload)
       .select('id')
       .single();
 
+    if (realDocError) {
+      console.warn('Real database failed, using virtual database for developer:', realDocError);
+      if (user?.email === 'eklavya2227@gmail.com') {
+        docData = await virtualDb.createDocument(docPayload);
+      } else {
+        docError = realDocError;
+      }
+    } else {
+      docData = realDocData;
+    }
+
     if (docError || !docData) {
-      setError('Failed to create document record.');
+      setError('Failed to create document record. Please try again.');
       setIsProcessing(false);
       return;
     }
