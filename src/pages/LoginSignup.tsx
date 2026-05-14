@@ -14,9 +14,16 @@ import ProofDeskLogo from '@/components/common/ProofDeskLogo';
 const LoginSignup: React.FC = () => {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  React.useEffect(() => {
+    if (location.state?.error) {
+      setError(location.state.error);
+    }
+  }, [location.state]);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');

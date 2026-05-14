@@ -22,7 +22,7 @@ function matchPublicRoute(path: string, patterns: string[]) {
 }
 
 export function RouteGuard({ children }: RouteGuardProps) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -37,6 +37,14 @@ export function RouteGuard({ children }: RouteGuardProps) {
     }
 
     if (user && !isPublic) {
+      // MASTER LOCK: Only allow this specific email
+      if (user.email !== 'eklavya2227@gmail.com') {
+        console.error('Unauthorized access attempt:', user.email);
+        signOut();
+        navigate('/login', { state: { error: 'Access Denied: Only the master administrator is allowed.' }, replace: true });
+        return;
+      }
+
       // If profile is not completed, redirect to profile page
       const isProfilePage = location.pathname === '/profile';
       if (!profile?.profile_completed && !isProfilePage) {
