@@ -17,6 +17,7 @@ const LoginSignup: React.FC = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -27,6 +28,7 @@ const LoginSignup: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsLoading(true);
 
     if (!loginEmail.includes('@')) {
@@ -54,6 +56,7 @@ const LoginSignup: React.FC = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsLoading(true);
 
     if (!signupEmail.includes('@')) {
@@ -67,11 +70,20 @@ const LoginSignup: React.FC = () => {
       return;
     }
 
-    const { error: signUpError } = await signUp(signupEmail, signupPassword);
+    const { data, error: signUpError } = await signUp(signupEmail, signupPassword);
+    setIsLoading(false);
 
     if (signUpError) {
-      setIsLoading(false);
       setError(signUpError.message || 'Signup failed. Please try again.');
+      return;
+    }
+
+    // Check if user is auto-logged in (email verification OFF)
+    const isAuthed = !!data?.session;
+
+    if (!isAuthed) {
+      setSuccess('Registration successful! Please check your email to verify your account.');
+      // Keep them on the page to see the message
       return;
     }
 
@@ -122,6 +134,12 @@ const LoginSignup: React.FC = () => {
               {error && (
                 <Alert variant="destructive" className="mb-4 border border-destructive/20 bg-destructive/5">
                   <AlertDescription className="text-sm">{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {success && (
+                <Alert className="mb-4 border-primary/20 bg-primary/5 text-primary">
+                  <AlertDescription className="text-sm">{success}</AlertDescription>
                 </Alert>
               )}
 
