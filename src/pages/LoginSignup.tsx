@@ -63,31 +63,31 @@ const LoginSignup: React.FC = () => {
       setIsLoading(false);
       return;
     }
-    if (signupPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
-      setIsLoading(false);
-      return;
-    }
+    // Allowlist Check
+    const AUTHORIZED_EMAILS = ['eklavya2227@gmail.com'];
+    const isDeveloper = AUTHORIZED_EMAILS.includes(signupEmail.toLowerCase());
 
-    // Allowlist Check: Check if email is in the allowed_users table
-    try {
-      const { data: isAllowed, error: allowError } = await supabase
-        .from('allowed_users')
-        .select('email')
-        .eq('email', signupEmail.toLowerCase())
-        .maybeSingle();
+    if (!isDeveloper) {
+      try {
+        const { data: isAllowed, error: allowError } = await supabase
+          .from('allowed_users')
+          .select('email')
+          .eq('email', signupEmail.toLowerCase())
+          .maybeSingle();
 
-      if (allowError) {
-        console.error('Allowlist check error:', allowError);
-        // If the table doesn't exist yet, we can't block. 
-        // For now, I'll log it but if you create the table, this will work.
-      } else if (!isAllowed) {
-        setError('Your email is not on the authorized list. Please contact the organizer.');
-        setIsLoading(false);
-        return;
+        if (allowError) {
+          console.warn('Allowlist table missing, blocking non-developer signup');
+          setError('Public registration is restricted. Please contact the developer.');
+          setIsLoading(false);
+          return;
+        } else if (!isAllowed) {
+          setError('Your email is not on the authorized list. Please contact the organizer.');
+          setIsLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Allowlist check failed:', err);
       }
-    } catch (err) {
-      console.error('Allowlist check failed:', err);
     }
 
     const { data, error: signUpError } = await signUp(signupEmail, signupPassword);
