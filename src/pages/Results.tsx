@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { virtualDb } from '@/lib/db-fallback';
+import { useAuth } from '@/contexts/AuthContext';
 import type { Document, DocumentOutput, Task } from '@/types/types';
 
 const priorityColors = {
