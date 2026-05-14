@@ -94,6 +94,37 @@ All colors MUST be HSL.
     --warning: 38 92% 50%;
     --info: 217 91% 60%;
   }
+
+  .navy {
+    --background: 217 89% 10%;
+    --foreground: 145 40% 98%;
+    --card: 217 89% 14%;
+    --card-foreground: 145 40% 98%;
+    --popover: 217 89% 14%;
+    --popover-foreground: 145 40% 98%;
+    --primary: 145 63% 45%;
+    --primary-foreground: 217 89% 10%;
+    --secondary: 217 50% 18%;
+    --secondary-foreground: 145 40% 98%;
+    --muted: 217 50% 18%;
+    --muted-foreground: 215 20% 75%;
+    --accent: 145 63% 45%;
+    --accent-foreground: 217 89% 10%;
+    --destructive: 0 62% 31%;
+    --border: 217 50% 22%;
+    --input: 217 50% 22%;
+    --ring: 145 63% 45%;
+    --sidebar-background: 217 89% 8%;
+    --sidebar-foreground: 145 40% 98%;
+    --sidebar-primary: 145 63% 45%;
+    --sidebar-primary-foreground: 217 89% 10%;
+    --sidebar-accent: 217 50% 18%;
+    --sidebar-accent-foreground: 145 40% 98%;
+    --sidebar-border: 217 50% 22%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --info: 217 91% 60%;
+  }
 }
 
 @layer base {

@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Processing from './pages/Processing';
 import Results from './pages/Results';
 import History from './pages/History';
+import Settings from './pages/Settings';
 import type { ReactNode } from 'react';
 
 export interface RouteConfig {
@@ -46,5 +47,10 @@ export const routes: RouteConfig[] = [
     name: 'History',
     path: '/history',
     element: <History />,
+  },
+  {
+    name: 'Settings',
+    path: '/settings',
+    element: <Settings />,
   },
 ];

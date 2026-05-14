@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import IntersectObserver from '@/components/common/IntersectObserver';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { RouteGuard } from '@/components/common/RouteGuard';
 import SplashScreen from '@/components/common/SplashScreen';
 
@@ -27,7 +28,8 @@ const App: React.FC = () => {
     <>
       {showSplash && <SplashScreen onComplete={handleSplashComplete} />}
       <Router>
-        <AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
           <RouteGuard>
             <IntersectObserver />
             <div className="flex flex-col min-h-screen">
@@ -46,7 +48,8 @@ const App: React.FC = () => {
             </div>
             <Toaster />
           </RouteGuard>
-        </AuthProvider>
+          </AuthProvider>
+        </ThemeProvider>
       </Router>
     </>
   );

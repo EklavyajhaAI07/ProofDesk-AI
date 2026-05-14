@@ -11,15 +11,22 @@ import {
   LogOut,
   Menu,
   User,
+  Settings,
+  Sun,
+  Moon,
+  Anchor
 } from 'lucide-react';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const navItems = [
   { name: 'Dashboard', path: '/', icon: Home },
   { name: 'History', path: '/history', icon: History },
+  { name: 'Security', path: '/settings', icon: Settings },
 ];
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, profile, signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -63,7 +70,39 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           })}
         </nav>
 
-        <div className="p-4 border-t border-border">
+          <div className="p-4 border-t border-border space-y-2">
+          <div className="flex items-center justify-between mb-2 px-3">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Theme</span>
+            <div className="flex gap-1">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={`h-7 w-7 ${theme === 'light' ? 'bg-primary/10 text-primary' : ''}`}
+                onClick={() => setTheme('light')}
+                title="Light Mode"
+              >
+                <Sun className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={`h-7 w-7 ${theme === 'dark' ? 'bg-primary/10 text-primary' : ''}`}
+                onClick={() => setTheme('dark')}
+                title="Dark Mode"
+              >
+                <Moon className="h-3.5 w-3.5" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className={`h-7 w-7 ${theme === 'navy' ? 'bg-primary/10 text-primary' : ''}`}
+                onClick={() => setTheme('navy')}
+                title="Indian Navy Mode"
+              >
+                <Anchor className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
           <div className="flex items-center gap-3 mb-3 px-3">
             <User className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="min-w-0">
@@ -71,7 +110,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
           </div>
-          <Button variant="ghost" className="w-full justify-start gap-3 text-sm text-muted-foreground hover:text-foreground" onClick={handleLogout}>
+          <Button variant="ghost" className="w-full justify-start gap-3 text-sm text-destructive hover:text-destructive hover:bg-destructive/10" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
             Log Out
           </Button>
