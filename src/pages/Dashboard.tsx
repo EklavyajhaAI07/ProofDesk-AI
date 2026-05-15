@@ -19,9 +19,10 @@ import {
   Sparkles,
   X,
   FileUp,
+  FileDigit,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { virtualDb } from '@/lib/db-fallback';
+import { extractTextFromFile } from '@/lib/document-parser';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -79,6 +80,16 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleTextPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboardData = e.clipboardData;
+    const hasImage = Array.from(clipboardData.items).some(item => item.type.startsWith('image/'));
+    
+    if (hasImage) {
+      e.preventDefault();
+      toast.error('Image paste is not supported. Please upload the image file using the upload button above, or paste text only.');
+    }
+  };
+
   const removeFile = () => {
     setUploadedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -101,7 +112,20 @@ const Dashboard: React.FC = () => {
       inputType = getFileType(uploadedFile);
       title = uploadedFile.name;
 
-      // Upload file to storage
+      setIsProcessing(true);
+      setError('Extracting text from file...');
+
+      try {
+        documentText = await extractTextFromFile(uploadedFile);
+        setError('');
+      } catch (err: any) {
+        setError(err.message);
+        setIsProcessing(false);
+        return;
+      }
+
+      setError('');
+
       const path = `${user!.id}/${crypto.randomUUID()}_${uploadedFile.name}`;
       const { error: uploadError } = await supabase.storage
         .from('documents')
@@ -109,20 +133,29 @@ const Dashboard: React.FC = () => {
 
       if (uploadError) {
         setError('Failed to upload file. Please try again.');
+        setIsProcessing(false);
         return;
       }
       filePath = path;
-
-      // For PDFs and images, we need to extract text
-      // For demo purposes, we'll use the file name as a placeholder for text
-      // In production, you'd use an OCR service or PDF text extraction
-      documentText = `[Document: ${uploadedFile.name}]\n\n${textInput || 'Please analyze this uploaded document.'}`;
     } else if (!documentText) {
       setError('Please upload a file or paste some text to process.');
       return;
     }
 
     setIsProcessing(true);
+
+    const { data: realDocData, error: realDocError } = await supabase
+      .from('documents')
+      .insert({
+        user_id: user!.id,
+        title,
+        input_type: inputType,
+        original_text: documentText.substring(0, 10000),
+        file_path: filePath,
+        status: 'uploaded',
+      })
+      .select()
+      .single();
 
     if (realDocError || !realDocData) {
       setError('Failed to create document record on Supabase. Have you run the SQL setup?');
@@ -132,7 +165,6 @@ const Dashboard: React.FC = () => {
 
     const documentId = realDocData.id;
 
-    // Navigate to processing page with document ID
     navigate('/processing', { state: { documentId, documentText } });
   };
 
@@ -250,6 +282,7 @@ Mark`;
                 placeholder="Paste an email, message, or document text here..."
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
+                onPaste={handleTextPaste}
                 className="min-h-[180px] resize-none px-3 py-2 text-sm"
               />
             </CardContent>
