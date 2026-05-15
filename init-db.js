@@ -1,8 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Config
-const SUPABASE_URL = 'https://lgwrdcavnqiixyexwwyt.supabase.co';
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxnd3JkY2F2bnFpaXlxZXh3d3l0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODU3Nzg0NSwiZXhwIjoyMDk0MTUzODQ1fQ.qum-QTzuOlHCegdW4pwnvpVR3ta0NKUgo412bpL0YeI';
+// Config - Use environment variables to avoid leaking keys
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  console.error('❌ Missing SUPABASE_URL or SERVICE_ROLE_KEY environment variables.');
+  console.log('Please run with: SUPABASE_URL=... SERVICE_ROLE_KEY=... node init-db.js');
+  process.exit(1);
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
@@ -104,7 +111,7 @@ async function init() {
   console.log('you MUST run the SQL one time in the dashboard.');
   console.log('--------------------------------------------------');
   console.log('I have prepared the code for you. Please just:');
-  console.log('1. Go to https://supabase.com/dashboard/project/lgwrdcavnqiixyexwwyt/sql/new');
+  console.log('1. Go to your Supabase Dashboard -> SQL Editor -> New Query');
   console.log('2. Paste the SQL block from the docs/SETUP.sql file.');
   console.log('3. Click RUN.');
   console.log('--------------------------------------------------');
