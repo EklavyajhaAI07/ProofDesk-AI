@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="ProofDesk AI Logo" width="120" height="120" />
+  <img src="public/logo.svg" alt="ProofDesk AI Logo" width="120" height="120" />
 </p>
 
 <h1 align="center">ProofDesk AI</h1>
