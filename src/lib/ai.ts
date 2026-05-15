@@ -97,42 +97,56 @@ RESPONSE FORMAT (strict JSON):
   ]
 }`;
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Analyze the following document and extract tasks, summary, and draft reply:\n\n${sanitizedText}` },
-      ],
-      temperature: 0.3,
-      max_tokens: 4000,
-    }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Groq API error:', errorText);
-    throw new Error('AI processing failed. Please check your API key and connection.');
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Analyze the following document and extract tasks, summary, and draft reply:\n\n${sanitizedText}` },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+      }),
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Groq API error:', errorText);
+      throw new Error('AI processing failed. Please check your API key and connection.');
+    }
+
+    const aiData = await response.json();
+    const aiMessage = aiData.choices?.[0]?.message?.content || '';
+
+    let jsonText = aiMessage;
+    const codeBlockMatch = aiMessage.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonText = codeBlockMatch[1].trim();
+    }
+
+    const validated = validateJSONResponse(jsonText);
+    if (!validated) {
+      throw new Error('AI returned an invalid response format. Please try again.');
+    }
+
+    return validated;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('AI processing timed out (60s). Please try with a shorter text or check your connection.');
+    }
+    throw err;
   }
-
-  const aiData = await response.json();
-  const aiMessage = aiData.choices?.[0]?.message?.content || '';
-
-  let jsonText = aiMessage;
-  const codeBlockMatch = aiMessage.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    jsonText = codeBlockMatch[1].trim();
-  }
-
-  const validated = validateJSONResponse(jsonText);
-  if (!validated) {
-    throw new Error('AI returned an invalid response format. Please try again.');
-  }
-
-  return validated;
 }
