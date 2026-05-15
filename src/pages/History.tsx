@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import PageMeta from '@/components/common/PageMeta';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/db/supabase';
+import { supabase, checkSupabaseConnection } from '@/db/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layouts/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,6 +49,15 @@ const History: React.FC = () => {
       }
 
       setError('');
+
+      // Check Supabase connection first
+      const connCheck = await checkSupabaseConnection();
+      if (!connCheck.ok) {
+        setError(`Connection error: ${connCheck.error || 'Cannot connect to database'}. Please check your environment variables.`);
+        setLoading(false);
+        return;
+      }
+
       const { data, error: fetchError } = await supabase
         .from('documents')
         .select('*')
@@ -57,7 +66,11 @@ const History: React.FC = () => {
 
       if (fetchError) {
         console.error('Fetch error:', fetchError);
-        setError(fetchError.message);
+        if (fetchError.code === '42P01') {
+          setError('Database tables not found. Please run the SQL setup in your Supabase dashboard (see supabase/migrations folder).');
+        } else {
+          setError(fetchError.message || 'Failed to load documents');
+        }
       } else {
         setDocuments(Array.isArray(data) ? data : []);
       }
@@ -113,7 +126,7 @@ const History: React.FC = () => {
                 <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-4" />
                 <h3 className="text-base font-medium mb-2">Connection Error</h3>
                 <p className="text-sm text-muted-foreground text-pretty max-w-xs mx-auto">
-                  {error}. Please check your Supabase connection and environment variables.
+                  {error}
                 </p>
               </div>
             ) : documents.length === 0 ? (

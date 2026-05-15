@@ -125,15 +125,69 @@ async function checkRateLimit(supabase: any, userId: string): Promise<{ allowed:
   return { allowed: true, remaining: RATE_LIMIT - limit.request_count - 1 };
 }
 
+// Fallback models to try if primary fails
+const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-70b-versatile', 'mixtral-8x7b-32768', 'llama3-70b-8192'];
+
+async function callGroqAPI(groqKey: string, messages: any[], model: string, retries = 2): Promise<any> {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${groqKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.3,
+      max_tokens: 4000,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Groq API error with model ${model}:`, errorText);
+    
+    // If model not found or overloaded, try fallback
+    if (retries > 0 && (response.status === 404 || response.status === 503 || response.status === 429)) {
+      const nextModel = GROQ_MODELS.find(m => m !== model);
+      if (nextModel) {
+        console.log(`Retrying with fallback model: ${nextModel}`);
+        return callGroqAPI(groqKey, messages, nextModel, retries - 1);
+      }
+    }
+    
+    throw new Error(`AI processing failed (${response.status}): ${errorText}`);
+  }
+
+  return response.json();
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const groqKey = Deno.env.get('GROQ_API_KEY')!;
+    // Validate environment variables
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const groqKey = Deno.env.get('GROQ_API_KEY');
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing Supabase environment variables');
+      return new Response(JSON.stringify({ error: 'Server configuration error: Missing Supabase credentials' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!groqKey) {
+      console.error('Missing GROQ_API_KEY environment variable');
+      return new Response(JSON.stringify({ error: 'Server configuration error: Missing AI API key' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -197,33 +251,13 @@ RESPONSE FORMAT (strict JSON):
   ]
 }`;
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${groqKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Analyze the following document and extract tasks, summary, and draft reply:\n\n${sanitizedText}` },
-        ],
-        temperature: 0.3,
-        max_tokens: 4000,
-      }),
-    });
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Analyze the following document and extract tasks, summary, and draft reply:\n\n${sanitizedText}` },
+    ];
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Groq API error:', errorText);
-      return new Response(JSON.stringify({ error: 'AI processing failed. Please try again.' }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const aiData = await response.json();
+    // Call Groq API with fallback models
+    const aiData = await callGroqAPI(groqKey, messages, GROQ_MODELS[0]);
     const aiMessage = aiData.choices?.[0]?.message?.content || '';
 
     // Try to extract JSON from response (it might be wrapped in markdown code blocks)
@@ -236,31 +270,12 @@ RESPONSE FORMAT (strict JSON):
     const validated = validateJSONResponse(jsonText);
     if (!validated) {
       // Retry with explicit JSON-only prompt
-      const retryResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${groqKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: 'Return ONLY raw JSON. No markdown. No explanations.' },
-            { role: 'user', content: `Extract JSON from this text. If it contains tasks, summary, and draft_reply, format it properly. Document:\n\n${sanitizedText}` },
-          ],
-          temperature: 0.2,
-          max_tokens: 4000,
-        }),
-      });
+      const retryMessages = [
+        { role: 'system', content: 'Return ONLY raw JSON. No markdown. No explanations.' },
+        { role: 'user', content: `Extract JSON from this text. If it contains tasks, summary, and draft_reply, format it properly. Document:\n\n${sanitizedText}` },
+      ];
 
-      if (!retryResponse.ok) {
-        return new Response(JSON.stringify({ error: 'AI processing failed after retry.' }), {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const retryData = await retryResponse.json();
+      const retryData = await callGroqAPI(groqKey, retryMessages, GROQ_MODELS[0]);
       const retryMessage = retryData.choices?.[0]?.message?.content || '';
       const retryCodeBlockMatch = retryMessage.match(/```(?:json)?\s*([\s\S]*?)```/);
       const retryJsonText = retryCodeBlockMatch ? retryCodeBlockMatch[1].trim() : retryMessage;
@@ -281,9 +296,9 @@ RESPONSE FORMAT (strict JSON):
     return new Response(JSON.stringify({ ...validated, remaining }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Edge function error:', err);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: err.message || 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
