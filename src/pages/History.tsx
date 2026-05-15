@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PageMeta from '@/components/common/PageMeta';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/db/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layouts/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -34,22 +35,37 @@ const typeIcon = {
 
 const History: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [error, setError] = useState('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDocuments = async () => {
-      const { data } = await supabase
+      if (!user) {
+        setDocuments([]);
+        setLoading(false);
+        return;
+      }
+
+      setError('');
+      const { data, error: fetchError } = await supabase
         .from('documents')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      setDocuments(Array.isArray(data) ? data : []);
+      if (fetchError) {
+        console.error('Fetch error:', fetchError);
+        setError(fetchError.message);
+      } else {
+        setDocuments(Array.isArray(data) ? data : []);
+      }
       setLoading(false);
     };
 
     fetchDocuments();
-  }, []);
+  }, [user]);
 
   const handleClick = (doc: Document) => {
     if (doc.status === 'completed') {
@@ -91,6 +107,14 @@ const History: React.FC = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : error ? (
+              <div className="p-8 text-center">
+                <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-4" />
+                <h3 className="text-base font-medium mb-2">Connection Error</h3>
+                <p className="text-sm text-muted-foreground text-pretty max-w-xs mx-auto">
+                  {error}. Please check your Supabase connection and environment variables.
+                </p>
               </div>
             ) : documents.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
