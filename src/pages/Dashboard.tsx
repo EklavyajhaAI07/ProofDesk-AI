@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import PageMeta from '@/components/common/PageMeta';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/db/supabase';
+import { supabase, checkSupabaseConnection } from '@/db/supabase';
 import AppLayout from '@/components/layouts/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -83,7 +83,7 @@ const Dashboard: React.FC = () => {
   const handleTextPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const clipboardData = e.clipboardData;
     const hasImage = Array.from(clipboardData.items).some(item => item.type.startsWith('image/'));
-    
+
     if (hasImage) {
       e.preventDefault();
       toast.error('Image paste is not supported. Please upload the image file using the upload button above, or paste text only.');
@@ -103,6 +103,14 @@ const Dashboard: React.FC = () => {
 
   const processDocument = async () => {
     setError('');
+
+    // Verify Supabase connection before starting
+    const connCheck = await checkSupabaseConnection();
+    if (!connCheck.ok) {
+      setError(`Connection error: ${connCheck.error || 'Unable to connect to database'}`);
+      return;
+    }
+
     let documentText = textInput.trim();
     let filePath: string | null = null;
     let inputType: 'pdf' | 'image' | 'text' = 'text';
@@ -119,24 +127,32 @@ const Dashboard: React.FC = () => {
         documentText = await extractTextFromFile(uploadedFile);
         setError('');
       } catch (err: any) {
-        setError(err.message);
+        setError(err.message || 'Failed to extract text from file');
         setIsProcessing(false);
         return;
       }
 
       setError('');
 
+      // Upload file to Supabase Storage
       const path = `${user!.id}/${crypto.randomUUID()}_${uploadedFile.name}`;
       const { error: uploadError } = await supabase.storage
         .from('documents')
         .upload(path, uploadedFile, { contentType: uploadedFile.type });
 
       if (uploadError) {
-        setError('Failed to upload file. Please try again.');
-        setIsProcessing(false);
-        return;
+        console.error('Storage upload error:', uploadError);
+        // Continue even if storage fails - the text is the important part
+        if (uploadError.message?.includes('bucket') || uploadError.message?.includes('not found')) {
+          console.warn('Storage bucket may not exist, continuing without file storage');
+        } else {
+          setError(`Failed to upload file: ${uploadError.message}`);
+          setIsProcessing(false);
+          return;
+        }
+      } else {
+        filePath = path;
       }
-      filePath = path;
     } else if (!documentText) {
       setError('Please upload a file or paste some text to process.');
       return;
@@ -144,6 +160,7 @@ const Dashboard: React.FC = () => {
 
     setIsProcessing(true);
 
+    // Create document record in database
     const { data: realDocData, error: realDocError } = await supabase
       .from('documents')
       .insert({
@@ -158,13 +175,19 @@ const Dashboard: React.FC = () => {
       .single();
 
     if (realDocError || !realDocData) {
-      setError('Failed to create document record on Supabase. Have you run the SQL setup?');
+      console.error('Document creation error:', realDocError);
+      setError(
+        realDocError?.code === '42P01'
+          ? 'Database tables not found. Please run the SQL setup in Supabase dashboard.'
+          : `Failed to create document record: ${realDocError?.message || 'Unknown error'}`
+      );
       setIsProcessing(false);
       return;
     }
 
     const documentId = realDocData.id;
 
+    // Navigate to processing page with document info
     navigate('/processing', { state: { documentId, documentText } });
   };
 

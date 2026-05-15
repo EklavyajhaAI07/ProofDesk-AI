@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/db/supabase';
 import { routes } from '@/routes';
 
 interface RouteGuardProps {
@@ -25,9 +26,47 @@ export function RouteGuard({ children }: RouteGuardProps) {
   const { user, profile, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [isAllowed, setIsAllowed] = useState<boolean | null>(null);
+  const [checkingAllowed, setCheckingAllowed] = useState(false);
+
+  const checkAllowedUser = useCallback(async (email: string | undefined) => {
+    if (!email) return false;
+    try {
+      const { data, error } = await supabase
+        .from('allowed_users')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle();
+      if (error) {
+        console.warn('allowed_users table check error:', error.message);
+        return false;
+      }
+      return !!data;
+    } catch {
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     if (loading) return;
+    if (!user) {
+      setIsAllowed(null);
+      setCheckingAllowed(false);
+      return;
+    }
+
+    const verifyAccess = async () => {
+      setCheckingAllowed(true);
+      const allowed = await checkAllowedUser(user.email || undefined);
+      setIsAllowed(allowed);
+      setCheckingAllowed(false);
+    };
+
+    verifyAccess();
+  }, [user, loading, checkAllowedUser]);
+
+  useEffect(() => {
+    if (loading || checkingAllowed) return;
 
     const isPublic = matchPublicRoute(location.pathname, PUBLIC_ROUTES);
 
@@ -37,28 +76,28 @@ export function RouteGuard({ children }: RouteGuardProps) {
     }
 
     if (user && !isPublic) {
-      // MASTER LOCK: Only allow this specific email
-      if (user.email !== 'eklavya2227@gmail.com') {
+      if (isAllowed === false) {
         console.error('Unauthorized access attempt:', user.email);
         signOut();
-        navigate('/login', { state: { error: 'Access Denied: Only the master administrator is allowed.' }, replace: true });
+        navigate('/login', { state: { error: 'Access Denied: Your email is not authorized. Please contact the administrator.' }, replace: true });
         return;
       }
 
-      // If profile is not completed, redirect to profile page
+      if (isAllowed === null && !isPublic) {
+        return;
+      }
+
       const isProfilePage = location.pathname === '/profile';
       if (!profile?.profile_completed && !isProfilePage) {
         navigate('/profile', { replace: true });
         return;
       }
-      // If profile is completed and on profile page, redirect to dashboard
       if (profile?.profile_completed && isProfilePage) {
         navigate('/', { replace: true });
         return;
       }
     }
 
-    // Redirect logged-in users from login page
     if (user && location.pathname === '/login') {
       if (!profile?.profile_completed) {
         navigate('/profile', { replace: true });
@@ -66,9 +105,9 @@ export function RouteGuard({ children }: RouteGuardProps) {
         navigate('/', { replace: true });
       }
     }
-  }, [user, profile, loading, location.pathname, navigate]);
+  }, [user, profile, loading, checkingAllowed, isAllowed, location.pathname, navigate, signOut]);
 
-  if (loading) {
+  if (loading || checkingAllowed) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>

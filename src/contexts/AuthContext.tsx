@@ -26,6 +26,29 @@ export async function getProfile(userId: string, email?: string): Promise<Profil
   return data;
 }
 
+// Check if user's email is in allowed_users table
+export async function checkAllowedUser(email: string | undefined): Promise<{ allowed: boolean; error?: string }> {
+  if (!email) return { allowed: false, error: 'No email provided' };
+
+  try {
+    const { data, error } = await supabase
+      .from('allowed_users')
+      .select('email')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Allowed users check error:', error.message);
+      return { allowed: false, error: error.message };
+    }
+
+    return { allowed: !!data };
+  } catch (err: any) {
+    console.error('Allowed users check exception:', err.message);
+    return { allowed: false, error: err.message };
+  }
+}
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -60,7 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           getProfile(session.user.id, session.user.email).then(setProfile);
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('Session error:', err);
+      })
       .finally(() => setLoading(false));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -77,8 +102,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+
+      // Check allowed_users immediately after successful sign in
+      if (data.user?.email) {
+        const { allowed, error: allowedError } = await checkAllowedUser(data.user.email);
+        if (!allowed) {
+          await supabase.auth.signOut();
+          return {
+            error: new Error(
+              allowedError === 'No email provided'
+                ? 'Access Denied: Your email is not authorized.'
+                : 'Access Denied: Your email is not authorized. Please contact the administrator.'
+            )
+          };
+        }
+      }
+
       return { error: null };
     } catch (error) {
       return { error: error as Error };
@@ -87,8 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({ 
-        email, 
+      // Check if email is in allowed_users before allowing sign up
+      const { allowed } = await checkAllowedUser(email);
+      if (!allowed) {
+        return {
+          data: null,
+          error: new Error('This email is not authorized to sign up. Please contact the administrator.')
+        };
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`

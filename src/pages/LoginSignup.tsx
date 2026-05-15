@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/db/supabase';
+import { supabase, checkSupabaseConnection } from '@/db/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,6 +38,14 @@ const LoginSignup: React.FC = () => {
     setSuccess('');
     setIsLoading(true);
 
+    // Validate connection first
+    const connCheck = await checkSupabaseConnection();
+    if (!connCheck.ok) {
+      setError(`Connection error: ${connCheck.error || 'Cannot connect to database'}`);
+      setIsLoading(false);
+      return;
+    }
+
     if (!loginEmail.includes('@')) {
       setError('Please enter a valid email address.');
       setIsLoading(false);
@@ -66,36 +74,23 @@ const LoginSignup: React.FC = () => {
     setSuccess('');
     setIsLoading(true);
 
+    // Validate connection first
+    const connCheck = await checkSupabaseConnection();
+    if (!connCheck.ok) {
+      setError(`Connection error: ${connCheck.error || 'Cannot connect to database'}`);
+      setIsLoading(false);
+      return;
+    }
+
     if (!signupEmail.includes('@')) {
       setError('Please enter a valid email address.');
       setIsLoading(false);
       return;
     }
-    // Allowlist Check
-    const AUTHORIZED_EMAILS = ['eklavya2227@gmail.com'];
-    const isDeveloper = AUTHORIZED_EMAILS.includes(signupEmail.toLowerCase());
-
-    if (!isDeveloper) {
-      try {
-        const { data: isAllowed, error: allowError } = await supabase
-          .from('allowed_users')
-          .select('email')
-          .eq('email', signupEmail.toLowerCase())
-          .maybeSingle();
-
-        if (allowError) {
-          console.warn('Allowlist table missing, blocking non-developer signup');
-          setError('Public registration is restricted. Please contact the developer.');
-          setIsLoading(false);
-          return;
-        } else if (!isAllowed) {
-          setError('Your email is not on the authorized list. Please contact the organizer.');
-          setIsLoading(false);
-          return;
-        }
-      } catch (err) {
-        console.error('Allowlist check failed:', err);
-      }
+    if (signupPassword.length < 6) {
+      setError('Password must be at least 6 characters.');
+      setIsLoading(false);
+      return;
     }
 
     const { data, error: signUpError } = await signUp(signupEmail, signupPassword);
@@ -111,11 +106,10 @@ const LoginSignup: React.FC = () => {
 
     if (!isAuthed) {
       setSuccess('Registration successful! Please check your email to verify your account.');
-      // Keep them on the page to see the message
       return;
     }
 
-    // Send welcome email via edge function
+    // Send welcome email via edge function (non-blocking)
     try {
       await supabase.functions.invoke('send-email', {
         body: {
@@ -128,7 +122,6 @@ const LoginSignup: React.FC = () => {
       // Non-blocking: don't fail signup if email fails
     }
 
-    setIsLoading(false);
     // After signup, redirect to profile completion
     navigate('/profile');
   };
@@ -157,8 +150,8 @@ const LoginSignup: React.FC = () => {
               <Info className="h-4 w-4" />
               <AlertTitle className="text-xs font-semibold uppercase tracking-wider mb-1">Access Restriction</AlertTitle>
               <AlertDescription className="text-xs leading-relaxed">
-                Public registration is currently limited to <strong>Hackathon Organizers</strong> to preserve AI processing credits. 
-                If you require access, please contact the developer.
+                Public registration is currently limited to <strong>authorized users</strong> to preserve AI processing credits. 
+                If you require access, please contact the administrator.
               </AlertDescription>
             </Alert>
             <Tabs defaultValue="login" className="w-full">

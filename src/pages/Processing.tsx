@@ -36,15 +36,37 @@ const Processing: React.FC = () => {
     const process = async () => {
       try {
         let data;
-        
-        // Try Edge Function first
-        const { data: fnData, error: fnError } = await supabase.functions.invoke('process-document', {
-          body: { document_text: documentText, document_id: documentId },
-        });
+
+        // Update document status to processing immediately
+        const { error: statusError } = await supabase
+          .from('documents')
+          .update({ status: 'processing' })
+          .eq('id', documentId);
+
+        if (statusError) {
+          console.error('Status update error:', statusError);
+        }
+
+        // Try Edge Function first with a timeout
+        let fnData = null;
+        let fnError = null;
+
+        try {
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Edge Function timeout')), 25000)
+          );
+          const invokePromise = supabase.functions.invoke('process-document', {
+            body: { document_text: documentText, document_id: documentId },
+          });
+          const result = (await Promise.race([invokePromise, timeoutPromise])) as any;
+          fnData = result.data;
+          fnError = result.error;
+        } catch (timeoutErr: any) {
+          fnError = { message: timeoutErr.message || 'Edge Function call timed out' };
+        }
 
         if (fnError) {
           console.warn('Edge Function failed or not deployed, falling back to local processing:', fnError);
-          // Fallback to local processing using VITE_GROQ_API_KEY
           data = await processDocumentLocally(documentText);
         } else {
           data = fnData;
@@ -64,6 +86,10 @@ const Processing: React.FC = () => {
 
         if (outputError) {
           console.error('Output save error:', outputError);
+          // Show warning but don't fail entirely if DB insert fails
+          if (outputError.code === '23503') {
+            console.error('Foreign key constraint failed - document may not exist');
+          }
         }
 
         // Save tasks
@@ -83,10 +109,17 @@ const Processing: React.FC = () => {
           }
         }
 
-        // Update document status
-        await supabase.from('documents').update({ status: 'completed' }).eq('id', documentId);
+        // Update document status to completed
+        const { error: updateError } = await supabase
+          .from('documents')
+          .update({ status: 'completed' })
+          .eq('id', documentId);
 
-        // Send processing complete email
+        if (updateError) {
+          console.error('Final status update error:', updateError);
+        }
+
+        // Send processing complete email (non-blocking)
         try {
           const { data: docData } = await supabase
             .from('documents')
@@ -114,7 +147,9 @@ const Processing: React.FC = () => {
         navigate('/results', { state: { documentId } });
       } catch (err: any) {
         clearInterval(interval);
+        console.error('Processing error:', err);
         setError(err.message || 'Processing failed. Please try again.');
+        // Update document status to failed
         await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
       }
     };
