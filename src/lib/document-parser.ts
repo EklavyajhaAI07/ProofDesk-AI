@@ -1,8 +1,10 @@
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.mjs';
 const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.mjs';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pdfjsModule: any = null;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadPdfJs(): Promise<any> {
   if (!pdfjsModule) {
     pdfjsModule = await import(PDFJS_CDN);
@@ -34,7 +36,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
     const pageText = textContent.items
-      .map((item: any) => item.str)
+      .map((item: { str: string }) => item.str)
       .join(' ');
     fullText += pageText + '\n\n';
   }
@@ -84,12 +86,13 @@ async function extractTextFromImage(file: File): Promise<string> {
         }
 
         resolve(text);
-      } catch (err: any) {
-        if (err.name === 'TypeError' || err.message.includes('failed')) {
+      } catch (err: unknown) {
+        const error = err as { name?: string; message?: string };
+        if (error.name === 'TypeError' || error.message?.includes('failed')) {
           reject(new Error('Image text extraction is currently unavailable. Please paste the text directly into the text field.'));
           return;
         }
-        reject(new Error(`Image text extraction failed: ${err.message}. Please try pasting the text directly.`));
+        reject(new Error(`Image text extraction failed: ${error.message || 'Unknown error'}. Please try pasting the text directly.`));
       }
     };
     reader.onerror = () => reject(new Error('Failed to read image file'));
