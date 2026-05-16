@@ -72,9 +72,10 @@ const Results: React.FC = () => {
           .order('priority', { ascending: false });
 
         setTasks(Array.isArray(tks) ? tks : []);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load results';
         console.error('Fetch error:', err);
-        toast.error(err.message || 'Failed to load results');
+        toast.error(errorMessage);
       } finally {
         setLoading(false);
       }
