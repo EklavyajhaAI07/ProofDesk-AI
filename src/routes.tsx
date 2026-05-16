@@ -5,6 +5,7 @@ import Processing from './pages/Processing';
 import Results from './pages/Results';
 import History from './pages/History';
 import Settings from './pages/Settings';
+import AdminDashboard from './pages/AdminDashboard';
 import type { ReactNode } from 'react';
 
 export interface RouteConfig {
@@ -52,5 +53,10 @@ export const routes: RouteConfig[] = [
     name: 'Settings',
     path: '/settings',
     element: <Settings />,
+  },
+  {
+    name: 'Admin',
+    path: '/admin',
+    element: <AdminDashboard />,
   },
 ];
