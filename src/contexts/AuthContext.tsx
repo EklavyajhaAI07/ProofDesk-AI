@@ -2,6 +2,14 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { supabase } from '@/db/supabase';
 import type { User } from '@supabase/supabase-js';
 import type { Profile } from '@/types/types';
+import {
+  recordFailedLogin,
+  clearLoginAttempts,
+  isLoginLocked,
+  validateEmail,
+  validatePassword,
+  getDeviceInfo,
+} from '@/lib/auth-security';
 
 export async function getProfile(userId: string, email?: string): Promise<Profile | null> {
   const { data, error } = await supabase
@@ -18,6 +26,7 @@ export async function getProfile(userId: string, email?: string): Promise<Profil
         email: email,
         name: 'Developer Admin',
         profile_completed: true,
+        is_admin: true,
         created_at: new Date().toISOString()
       } as Profile;
     }
@@ -43,9 +52,27 @@ export async function checkAllowedUser(email: string | undefined): Promise<{ all
     }
 
     return { allowed: !!data };
-  } catch (err: any) {
-    console.error('Allowed users check exception:', err.message);
-    return { allowed: false, error: err.message };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('Allowed users check exception:', message);
+    return { allowed: false, error: message };
+  }
+}
+
+// Log authentication events (non-blocking)
+async function logAuthEvent(
+  userId: string | null,
+  eventType: string,
+  _deviceInfo?: string
+): Promise<void> {
+  try {
+    await supabase.from('auth_logs').insert({
+      user_id: userId,
+      event_type: eventType,
+      device_info: _deviceInfo || getDeviceInfo(),
+    });
+  } catch {
+    // Non-blocking — don't break auth flow
   }
 }
 
@@ -54,9 +81,12 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string) => Promise<{ data: any; error: Error | null }>;
+  signUp: (email: string, password: string) => Promise<{ data: unknown; error: Error | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
+  verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -102,8 +132,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
+      // Check client-side lockout
+      const lockCheck = isLoginLocked();
+      if (lockCheck.locked) {
+        return {
+          error: new Error(
+            `Too many failed login attempts. Please try again in ${lockCheck.lockoutMinutes} minutes.`
+          )
+        };
+      }
+
+      // Validate email format
+      const emailCheck = validateEmail(email);
+      if (!emailCheck.valid) {
+        return { error: new Error(emailCheck.error || 'Invalid email.') };
+      }
+
+      // Validate password minimum
+      if (password.length < 6) {
+        return { error: new Error('Password must be at least 6 characters.') };
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (error) {
+        const result = recordFailedLogin();
+        await logAuthEvent(null, 'failed_login');
+
+        if (result.locked) {
+          return {
+            error: new Error(
+              `Too many failed attempts. Account locked for ${result.lockoutMinutes} minutes.`
+            )
+          };
+        }
+
+        return {
+          error: new Error(
+            `${error.message}${result.remainingAttempts <= 2 ? ` (${result.remainingAttempts} attempts remaining)` : ''}`
+          )
+        };
+      }
 
       // Check allowed_users immediately after successful sign in
       if (data.user?.email) {
@@ -120,6 +188,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Successful login
+      clearLoginAttempts();
+      await logAuthEvent(data.user?.id ?? null, 'login');
+
       return { error: null };
     } catch (error) {
       return { error: error as Error };
@@ -128,6 +200,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     try {
+      // Validate email
+      const emailCheck = validateEmail(email);
+      if (!emailCheck.valid) {
+        return { data: null, error: new Error(emailCheck.error || 'Invalid email.') };
+      }
+
+      // Validate password strength
+      const pwCheck = validatePassword(password);
+      if (!pwCheck.valid) {
+        return { data: null, error: new Error(pwCheck.errors.join(' ')) };
+      }
+
       // Check if email is in allowed_users before allowing sign up
       const { allowed } = await checkAllowedUser(email);
       if (!allowed) {
@@ -145,6 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
       if (error) throw error;
+
+      // Log signup event
+      await logAuthEvent(data.user?.id ?? null, 'signup');
+
       return { data, error: null };
     } catch (error) {
       return { data: null, error: error as Error };
@@ -152,13 +240,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    if (user) {
+      await logAuthEvent(user.id, 'logout');
+    }
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      const emailCheck = validateEmail(email);
+      if (!emailCheck.valid) {
+        return { error: new Error(emailCheck.error || 'Invalid email.') };
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login?reset=true`,
+      });
+
+      if (error) throw error;
+
+      await logAuthEvent(null, 'password_reset');
+
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    try {
+      const pwCheck = validatePassword(newPassword);
+      if (!pwCheck.valid) {
+        return { error: new Error(pwCheck.errors.join(' ')) };
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  };
+
+  const verifyOtp = async (email: string, token: string) => {
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'email',
+      });
+
+      if (error) throw error;
+
+      await logAuthEvent(user?.id ?? null, 'otp_verified');
+
+      return { error: null };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user, profile, loading,
+        signIn, signUp, signOut,
+        refreshProfile, resetPassword,
+        updatePassword, verifyOtp,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
