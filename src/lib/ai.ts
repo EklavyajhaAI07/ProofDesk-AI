@@ -15,6 +15,10 @@ const GROQ_MODELS = [
   'llama3-70b-8192'
 ];
 
+// Rate limiting constants
+const RATE_LIMIT_PER_HOUR = 5;
+const RATE_WINDOW_KEY = 'proofdesk_ai_usage';
+
 export interface Task {
   task_text: string;
   due_date?: string | null;
@@ -27,6 +31,69 @@ export interface AIResponse {
   draft_reply: string;
   tasks: Task[];
 }
+
+// ============================================================
+// Client-side rate limit check (complementary to server-side)
+// ============================================================
+
+interface ClientRateLimit {
+  count: number;
+  windowStart: number;
+}
+
+export function checkClientRateLimit(): { allowed: boolean; remaining: number; resetInMinutes: number } {
+  try {
+    const raw = localStorage.getItem(RATE_WINDOW_KEY);
+    const now = Date.now();
+    const windowMs = 60 * 60 * 1000; // 1 hour
+
+    if (raw) {
+      const data: ClientRateLimit = JSON.parse(raw);
+      const elapsed = now - data.windowStart;
+
+      if (elapsed > windowMs) {
+        // Window expired, reset
+        localStorage.setItem(RATE_WINDOW_KEY, JSON.stringify({ count: 0, windowStart: now }));
+        return { allowed: true, remaining: RATE_LIMIT_PER_HOUR, resetInMinutes: 60 };
+      }
+
+      if (data.count >= RATE_LIMIT_PER_HOUR) {
+        const resetInMs = windowMs - elapsed;
+        return { allowed: false, remaining: 0, resetInMinutes: Math.ceil(resetInMs / 60000) };
+      }
+
+      return {
+        allowed: true,
+        remaining: RATE_LIMIT_PER_HOUR - data.count,
+        resetInMinutes: Math.ceil((windowMs - elapsed) / 60000),
+      };
+    }
+
+    localStorage.setItem(RATE_WINDOW_KEY, JSON.stringify({ count: 0, windowStart: now }));
+    return { allowed: true, remaining: RATE_LIMIT_PER_HOUR, resetInMinutes: 60 };
+  } catch {
+    return { allowed: true, remaining: RATE_LIMIT_PER_HOUR, resetInMinutes: 60 };
+  }
+}
+
+export function incrementClientRateLimit(): void {
+  try {
+    const raw = localStorage.getItem(RATE_WINDOW_KEY);
+    const now = Date.now();
+
+    if (raw) {
+      const data: ClientRateLimit = JSON.parse(raw);
+      data.count += 1;
+      localStorage.setItem(RATE_WINDOW_KEY, JSON.stringify(data));
+    } else {
+      localStorage.setItem(RATE_WINDOW_KEY, JSON.stringify({ count: 1, windowStart: now }));
+    }
+  } catch { /* ignore */ }
+}
+
+// ============================================================
+// Input Sanitization
+// ============================================================
 
 function sanitizeInput(text: string): string {
   let sanitized = text;
@@ -48,6 +115,10 @@ function sanitizeInput(text: string): string {
   });
   return sanitized.slice(0, 15000);
 }
+
+// ============================================================
+// Response Validation
+// ============================================================
 
 function validateJSONResponse(jsonText: string): AIResponse | null {
   try {
@@ -80,7 +151,11 @@ function validateJSONResponse(jsonText: string): AIResponse | null {
   }
 }
 
-async function callGroqAPI(model: string, messages: any[], retries = 2): Promise<any> {
+// ============================================================
+// Groq API Caller with retry & fallback
+// ============================================================
+
+async function callGroqAPI(model: string, messages: Array<{ role: string; content: string }>, retries = 2): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000);
 
@@ -108,7 +183,8 @@ async function callGroqAPI(model: string, messages: any[], retries = 2): Promise
 
       // If model not found or overloaded, try fallback
       if (retries > 0 && (response.status === 404 || response.status === 503 || response.status === 429)) {
-        const nextModel = GROQ_MODELS.find(m => m !== model);
+        const currentIndex = GROQ_MODELS.indexOf(model);
+        const nextModel = GROQ_MODELS[currentIndex + 1] || GROQ_MODELS.find(m => m !== model);
         if (nextModel) {
           console.warn(`[AI] Retrying with fallback model: ${nextModel}`);
           return callGroqAPI(nextModel, messages, retries - 1);
@@ -118,16 +194,26 @@ async function callGroqAPI(model: string, messages: any[], retries = 2): Promise
       throw new Error(`AI processing failed (${response.status}). Please check your API key and connection.`);
     }
 
-    return response.json();
-  } catch (err: any) {
+    return response.json() as Promise<Record<string, unknown>>;
+  } catch (err: unknown) {
     clearTimeout(timeoutId);
     throw err;
   }
 }
 
+// ============================================================
+// Main Processing Function
+// ============================================================
+
 export async function processDocumentLocally(text: string): Promise<AIResponse> {
   if (!GROQ_API_KEY) {
     throw new Error('GROQ_API_KEY is not configured in .env file. Please add your API key and restart the server.');
+  }
+
+  // Check client-side rate limit
+  const rateCheck = checkClientRateLimit();
+  if (!rateCheck.allowed) {
+    throw new Error(`Rate limit exceeded. You have used all ${RATE_LIMIT_PER_HOUR} requests this hour. Try again in ${rateCheck.resetInMinutes} minutes.`);
   }
 
   const sanitizedText = sanitizeInput(text);
@@ -162,7 +248,8 @@ RESPONSE FORMAT (strict JSON):
 
   try {
     const aiData = await callGroqAPI(GROQ_MODELS[0], messages);
-    const aiMessage = aiData.choices?.[0]?.message?.content || '';
+    const choices = aiData.choices as Array<{ message?: { content?: string } }> | undefined;
+    const aiMessage = choices?.[0]?.message?.content || '';
 
     let jsonText = aiMessage;
     const codeBlockMatch = aiMessage.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -179,7 +266,8 @@ RESPONSE FORMAT (strict JSON):
       ];
 
       const retryData = await callGroqAPI(GROQ_MODELS[0], retryMessages);
-      const retryMessage = retryData.choices?.[0]?.message?.content || '';
+      const retryChoices = retryData.choices as Array<{ message?: { content?: string } }> | undefined;
+      const retryMessage = retryChoices?.[0]?.message?.content || '';
       const retryCodeBlockMatch = retryMessage.match(/```(?:json)?\s*([\s\S]*?)```/);
       const retryJsonText = retryCodeBlockMatch ? retryCodeBlockMatch[1].trim() : retryMessage;
       const retryValidated = validateJSONResponse(retryJsonText);
@@ -188,12 +276,16 @@ RESPONSE FORMAT (strict JSON):
         throw new Error('AI returned an invalid response format after retry. Please try again.');
       }
 
+      // Increment rate limit on success
+      incrementClientRateLimit();
       return retryValidated;
     }
 
+    // Increment rate limit on success
+    incrementClientRateLimit();
     return validated;
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
       throw new Error('AI processing timed out (60s). Please try with a shorter text or check your connection.');
     }
     throw err;
