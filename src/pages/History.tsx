@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import PageMeta from '@/components/common/PageMeta';
 import { useNavigate } from 'react-router-dom';
 import { supabase, checkSupabaseConnection } from '@/db/supabase';
@@ -6,7 +6,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import AppLayout from '@/components/layouts/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import {
   FileText,
   Image as ImageIcon,
@@ -15,10 +28,18 @@ import {
   Clock,
   AlertCircle,
   ChevronRight,
+  ChevronLeft,
   HistoryIcon,
   Inbox,
+  Search,
+  Trash2,
+  Download,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Document } from '@/types/types';
+
+const ITEMS_PER_PAGE = 10;
 
 const statusConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle2 }> = {
   uploaded: { label: 'Uploaded', color: 'bg-muted text-muted-foreground border-border', icon: Clock },
@@ -39,6 +60,10 @@ const History: React.FC = () => {
   const [error, setError] = useState('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDocuments = async () => {
@@ -80,11 +105,97 @@ const History: React.FC = () => {
     fetchDocuments();
   }, [user]);
 
+  // Filtered & paginated documents
+  const filteredDocuments = useMemo(() => {
+    if (!searchQuery.trim()) return documents;
+    const query = searchQuery.toLowerCase();
+    return documents.filter(doc =>
+      doc.title.toLowerCase().includes(query) ||
+      doc.input_type.toLowerCase().includes(query) ||
+      doc.status.toLowerCase().includes(query)
+    );
+  }, [documents, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredDocuments.length / ITEMS_PER_PAGE));
+  const paginatedDocuments = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredDocuments.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredDocuments, currentPage]);
+
+  // Reset page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   const handleClick = (doc: Document) => {
     if (doc.status === 'completed') {
       navigate('/results', { state: { documentId: doc.id } });
     }
   };
+
+  const handleDelete = useCallback(async (docId: string) => {
+    setDeletingId(docId);
+    try {
+      // Get the document to check for file_path
+      const doc = documents.find(d => d.id === docId);
+
+      // Delete associated tasks first
+      await supabase.from('tasks').delete().eq('document_id', docId);
+      // Delete associated outputs
+      await supabase.from('document_outputs').delete().eq('document_id', docId);
+
+      // Delete the document file from storage if it exists
+      if (doc?.file_path) {
+        await supabase.storage.from('documents').remove([doc.file_path]);
+      }
+
+      // Delete the document record
+      const { error: deleteError } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', docId);
+
+      if (deleteError) {
+        toast.error(`Failed to delete: ${deleteError.message}`);
+      } else {
+        setDocuments(prev => prev.filter(d => d.id !== docId));
+        toast.success('Document deleted successfully');
+      }
+    } catch (err) {
+      toast.error('Failed to delete document');
+      console.error('Delete error:', err);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [documents]);
+
+  const handleDownload = useCallback(async (doc: Document) => {
+    if (!doc.file_path) {
+      toast.error('No file available for download');
+      return;
+    }
+
+    setDownloadingId(doc.id);
+    try {
+      const { data, error } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(doc.file_path, 60); // 60 seconds expiry
+
+      if (error || !data?.signedUrl) {
+        toast.error('Failed to generate download link');
+        return;
+      }
+
+      // Open signed URL in new tab for download
+      window.open(data.signedUrl, '_blank');
+      toast.success('Download started');
+    } catch (err) {
+      toast.error('Download failed');
+      console.error('Download error:', err);
+    } finally {
+      setDownloadingId(null);
+    }
+  }, []);
 
   return (
     <AppLayout>
@@ -104,9 +215,29 @@ const History: React.FC = () => {
           </p>
         </div>
 
+        {/* Search Bar */}
+        {!loading && !error && documents.length > 0 && (
+          <div className="mb-4 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search documents by name, type, or status..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-10"
+            />
+          </div>
+        )}
+
         <Card className="border border-border shadow-none">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-medium">All Documents</CardTitle>
+            <CardTitle className="text-base font-medium flex items-center justify-between">
+              <span>All Documents</span>
+              {!loading && filteredDocuments.length > 0 && (
+                <Badge variant="secondary" className="text-xs font-normal">
+                  {filteredDocuments.length} document{filteredDocuments.length !== 1 ? 's' : ''}
+                </Badge>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
@@ -129,51 +260,133 @@ const History: React.FC = () => {
                   {error}
                 </p>
               </div>
-            ) : documents.length === 0 ? (
+            ) : filteredDocuments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <Inbox className="h-10 w-10 text-muted-foreground mb-3" />
-                <h3 className="text-base font-medium mb-1">No documents yet</h3>
+                <h3 className="text-base font-medium mb-1">
+                  {searchQuery ? 'No results found' : 'No documents yet'}
+                </h3>
                 <p className="text-sm text-muted-foreground text-pretty max-w-xs">
-                  Process your first document to see it here.
+                  {searchQuery
+                    ? 'Try adjusting your search terms.'
+                    : 'Process your first document to see it here.'}
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {documents.map((doc) => {
+                {paginatedDocuments.map((doc) => {
                   const status = statusConfig[doc.status] || statusConfig.uploaded;
                   const StatusIcon = status.icon;
                   const TypeIcon = typeIcon[doc.input_type] || FileText;
                   const isClickable = doc.status === 'completed';
+                  const isDeleting = deletingId === doc.id;
+                  const isDownloading = downloadingId === doc.id;
 
                   return (
-                    <button
-                      key={doc.id}
-                      onClick={() => handleClick(doc)}
-                      disabled={!isClickable}
-                      className={`w-full flex items-center gap-3 p-4 text-left transition-colors ${
-                        isClickable
-                          ? 'hover:bg-muted/50 cursor-pointer'
-                          : 'cursor-default opacity-70'
-                      }`}
-                    >
-                      <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                        <TypeIcon className="h-5 w-5 text-muted-foreground" />
+                    <div key={doc.id} className="flex items-center gap-3 p-4 group">
+                      <button
+                        onClick={() => handleClick(doc)}
+                        disabled={!isClickable}
+                        className={`flex items-center gap-3 flex-1 min-w-0 text-left transition-colors ${
+                          isClickable ? 'hover:opacity-80 cursor-pointer' : 'cursor-default opacity-70'
+                        }`}
+                      >
+                        <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                          <TypeIcon className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{doc.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(doc.created_at).toLocaleDateString()} at{' '}
+                            {new Date(doc.created_at).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className={`text-xs font-normal ${status.color}`}>
+                          <StatusIcon className="h-3 w-3 mr-1" />
+                          {status.label}
+                        </Badge>
+
+                        {/* Download button */}
+                        {doc.file_path && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                            onClick={(e) => { e.stopPropagation(); handleDownload(doc); }}
+                            disabled={isDownloading}
+                            title="Download file"
+                          >
+                            {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                          </Button>
+                        )}
+
+                        {/* Delete button */}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                              disabled={isDeleting}
+                              title="Delete document"
+                            >
+                              {isDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Document</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will permanently delete "{doc.title}" and all associated tasks, outputs, and files. This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDelete(doc.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+
+                        {isClickable && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{doc.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(doc.created_at).toLocaleDateString()} at{' '}
-                          {new Date(doc.created_at).toLocaleTimeString()}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className={`text-xs font-normal shrink-0 ${status.color}`}>
-                        <StatusIcon className="h-3 w-3 mr-1" />
-                        {status.label}
-                      </Badge>
-                      {isClickable && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
-                    </button>
+                    </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between p-4 border-t border-border">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(p => p - 1)}
+                  className="gap-1"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Previous
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(p => p + 1)}
+                  className="gap-1"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
             )}
           </CardContent>
