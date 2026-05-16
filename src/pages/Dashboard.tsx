@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import PageMeta from '@/components/common/PageMeta';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,10 +19,10 @@ import {
   Sparkles,
   X,
   FileUp,
-  FileDigit,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractTextFromFile } from '@/lib/document-parser';
+import { checkClientRateLimit } from '@/lib/ai';
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -34,6 +34,15 @@ const Dashboard: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [rateLimit, setRateLimit] = useState(() => checkClientRateLimit());
+
+  // Refresh rate limit display periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRateLimit(checkClientRateLimit());
+    }, 30000); // every 30s
+    return () => clearInterval(interval);
+  }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -104,6 +113,13 @@ const Dashboard: React.FC = () => {
   const processDocument = async () => {
     setError('');
 
+    // Check client rate limit
+    const rateCheck = checkClientRateLimit();
+    if (!rateCheck.allowed) {
+      setError(`Rate limit exceeded. Try again in ${rateCheck.resetInMinutes} minutes.`);
+      return;
+    }
+
     // Verify Supabase connection before starting
     const connCheck = await checkSupabaseConnection();
     if (!connCheck.ok) {
@@ -126,8 +142,10 @@ const Dashboard: React.FC = () => {
       try {
         documentText = await extractTextFromFile(uploadedFile);
         setError('');
-      } catch (err: any) {
-        setError(err.message || 'Failed to extract text from file');
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Upload failed. Please try again.';
+        console.error('Upload error:', err);
+        toast.error(errorMessage);
         setIsProcessing(false);
         return;
       }
@@ -338,9 +356,20 @@ Mark`;
 
           {/* Info badge */}
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs font-normal bg-muted text-muted-foreground border-0">
+            <Badge
+              variant="secondary"
+              className={`text-xs font-normal border-0 ${
+                rateLimit.remaining <= 0
+                  ? 'bg-destructive/10 text-destructive'
+                  : rateLimit.remaining <= 2
+                    ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+                    : 'bg-muted text-muted-foreground'
+              }`}
+            >
               <Upload className="h-3 w-3 mr-1" />
-              5 requests per hour
+              {rateLimit.remaining <= 0
+                ? `Limit reached — resets in ${rateLimit.resetInMinutes}m`
+                : `${rateLimit.remaining} of 5 requests remaining`}
             </Badge>
           </div>
         </div>
