@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, FileSearch, ListChecks, PenLine, AlertCircle } from 'lucide-react';
 import { processDocumentLocally } from '@/lib/ai';
 import { useAuth } from '@/contexts/AuthContext';
+import type { ProcessResult } from '@/types/types';
 
 const steps = [
   { label: 'Reading document', icon: FileSearch },
@@ -48,8 +49,22 @@ const Processing: React.FC = () => {
         }
 
         // Try Edge Function first with a timeout
-        let fnData = null;
-        let fnError = null;
+        let fnData: ProcessResult | null = null;
+        let fnError: { message: string } | null = null;
+        let generationId: string | null = null;
+
+        // Log generation start
+        try {
+          const { data: genLog } = await supabase.from('ai_generations').insert({
+            user_id: user.id,
+            prompt: documentText.substring(0, 1000),
+            generation_status: 'processing',
+            ip_address: null, // Should ideally be handled server-side or via a specialized service
+          }).select('id').single();
+          generationId = genLog?.id || null;
+        } catch (e) {
+          console.error('Failed to log generation start:', e);
+        }
 
         try {
           const timeoutPromise = new Promise<never>((_, reject) =>
@@ -58,22 +73,30 @@ const Processing: React.FC = () => {
           const invokePromise = supabase.functions.invoke('process-document', {
             body: { document_text: documentText, document_id: documentId },
           });
-          const result = (await Promise.race([invokePromise, timeoutPromise])) as any;
+          const result = (await Promise.race([invokePromise, timeoutPromise])) as { data: ProcessResult; error: { message: string } };
           fnData = result.data;
           fnError = result.error;
-        } catch (timeoutErr: any) {
-          fnError = { message: timeoutErr.message || 'Edge Function call timed out' };
+        } catch (timeoutErr: unknown) {
+          fnError = { message: timeoutErr instanceof Error ? timeoutErr.message : 'Edge Function call timed out' };
         }
 
         if (fnError) {
           console.warn('Edge Function failed or not deployed, falling back to local processing:', fnError);
           data = await processDocumentLocally(documentText);
         } else {
-          data = fnData;
+          data = fnData as ProcessResult;
         }
 
         if (!data) {
           throw new Error('Processing failed to return data');
+        }
+
+        // Log generation completion
+        if (generationId) {
+          await supabase.from('ai_generations').update({
+            generation_status: 'completed',
+            response: JSON.stringify(data).substring(0, 1000),
+          }).eq('id', generationId);
         }
 
         // Save results to database
@@ -94,12 +117,12 @@ const Processing: React.FC = () => {
 
         // Save tasks
         if (data.tasks && data.tasks.length > 0) {
-          const tasksToInsert = data.tasks.map((task: any) => ({
+          const tasksToInsert = data.tasks.map((task: Task) => ({
             document_id: documentId,
             task_text: task.task_text,
             due_date: task.due_date || null,
             priority: task.priority,
-            status: 'open',
+            status: 'open' as const,
             source_snippet: task.source_snippet || null,
           }));
 
@@ -145,10 +168,11 @@ const Processing: React.FC = () => {
 
         // Navigate to results
         navigate('/results', { state: { documentId } });
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Processing failed. Please try again.';
         clearInterval(interval);
         console.error('Processing error:', err);
-        setError(err.message || 'Processing failed. Please try again.');
+        setError(errorMessage);
         // Update document status to failed
         await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
       }
