@@ -14,7 +14,8 @@ import {
   Settings,
   Sun,
   Moon,
-  Anchor
+  Anchor,
+  ShieldCheck
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -22,6 +23,7 @@ const navItems = [
   { name: 'Dashboard', path: '/', icon: Home },
   { name: 'History', path: '/history', icon: History },
   { name: 'Security', path: '/settings', icon: Settings },
+  { name: 'Admin', path: '/admin', icon: ShieldCheck, adminOnly: true },
 ];
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -82,7 +84,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <Separator />
 
         <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation">
-          {navItems.map((item) => {
+          {navItems.filter(item => !item.adminOnly || profile?.is_admin).map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             return (
@@ -137,7 +139,7 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   <ProofDeskLogo size="md" />
                 </div>
                 <nav className="flex-1 p-4 space-y-1" aria-label="Mobile navigation">
-                  {navItems.map((item) => {
+                  {navItems.filter(item => !item.adminOnly || profile?.is_admin).map((item) => {
                     const Icon = item.icon;
                     const isActive = location.pathname === item.path;
                     return (
