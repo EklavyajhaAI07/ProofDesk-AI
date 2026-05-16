@@ -24,9 +24,8 @@ export const supabase = createClient(validUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
   global: {
-    fetch: (...args: any[]) => {
+    fetch: (url: string | URL | Request, options?: RequestInit) => {
       // Add timeout to all fetch requests via AbortController
-      const [url, options = {}] = args;
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
@@ -53,7 +52,7 @@ export async function checkSupabaseConnection(): Promise<{ ok: boolean; error?: 
       return { ok: false, error: error.message };
     }
     return { ok: true };
-  } catch (err: any) {
-    return { ok: false, error: err.message || 'Unknown connection error' };
+  } catch (err: unknown) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Unknown connection error' };
   }
 }
